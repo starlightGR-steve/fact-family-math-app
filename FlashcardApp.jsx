@@ -30,6 +30,8 @@ const DivideIcon = ({ size = 24, className = "" }) => (
   </svg>
 );
 
+// --- DATA GENERATION LOGIC ---
+
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
 // Hook for Speech (TTS + Custom Audio)
@@ -724,8 +726,8 @@ const FlashcardApp = () => {
 
                     {/* Answer (revealed or placeholder) */}
                     <div className={`
-                      text-4xl sm:text-6xl md:text-8xl font-bold text-indigo-600 transition-all duration-500 min-w-[1ch]
-                      ${isFlipped ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-4'}
+                      text-4xl sm:text-6xl md:text-8xl font-bold text-indigo-600 min-w-[1ch]
+                      ${isFlipped ? 'opacity-100' : 'opacity-0'}
                     `}>
                       {currentCard.a}
                     </div>
