@@ -729,7 +729,7 @@ const FlashcardApp = () => {
 
                     {/* Answer (revealed or placeholder) */}
                     <div className={`
-                      text-4xl sm:text-6xl md:text-8xl font-bold text-indigo-600 min-w-[1ch]
+                      text-4xl sm:text-6xl md:text-8xl font-bold text-indigo-600 min-w-[1ch] transition-opacity duration-300
                       ${isFlipped ? 'opacity-100' : 'opacity-0'}
                     `}>
                       {currentCard.a}
