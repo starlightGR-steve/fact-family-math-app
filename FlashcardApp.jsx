@@ -493,15 +493,18 @@ const FlashcardApp = () => {
 
   const handleNext = (e) => {
     e.stopPropagation();
-    if (currentIndex < deck.length - 1) {
-      setIsFlipped(false);
-      setShowVisual(false);
-      setCurrentIndex(prev => prev + 1);
-    } else {
-      setCurrentIndex(0);
-      setIsFlipped(false);
-      setShowVisual(false);
-    }
+    // First, flip the card back and hide visual
+    setIsFlipped(false);
+    setShowVisual(false);
+
+    // Wait for the fade-out animation to complete before changing cards
+    setTimeout(() => {
+      if (currentIndex < deck.length - 1) {
+        setCurrentIndex(prev => prev + 1);
+      } else {
+        setCurrentIndex(0);
+      }
+    }, 300); // Match this to the opacity transition duration
   };
 
   const handleReplayAudio = (e) => {
