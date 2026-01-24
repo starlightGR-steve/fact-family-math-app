@@ -1,15 +1,25 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Volume2, VolumeX, ArrowRight, Calculator, RefreshCw, LayoutGrid, CreditCard, Plus, Minus, X, Equal, Mic, Square, Settings } from 'lucide-react';
+import { Volume2, VolumeX, ArrowRight, Calculator, RefreshCw, LayoutGrid, CreditCard, Plus, Minus, X, Equal, Mic, Square, Settings, Shuffle, CheckSquare, Square as SquareIcon } from 'lucide-react';
 import { initializeApp } from "firebase/app";
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "firebase/auth";
 import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot } from "firebase/firestore";
 
 // --- FIREBASE SETUP ---
-const firebaseConfig = JSON.parse(__firebase_config);
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
+let app = null;
+let auth = null;
+let db = null;
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+try {
+  const firebaseConfig = JSON.parse(__firebase_config);
+  if (firebaseConfig.apiKey) {
+    app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    db = getFirestore(app);
+  }
+} catch (e) {
+  console.warn("Firebase not configured, running in offline mode:", e.message);
+}
 
 // --- CUSTOM ICONS ---
 
@@ -34,12 +44,21 @@ const DivideIcon = ({ size = 24, className = "" }) => (
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
+// Grammar helper
+const pluralize = (count, noun) => `${count} ${noun}${count === 1 ? '' : 's'}`;
+
 // Hook for Speech (TTS + Custom Audio)
 const useSpeech = (customAudioMap) => {
   const [voices, setVoices] = useState([]);
   const [selectedVoice, setSelectedVoice] = useState(null);
   const [enabled, setEnabled] = useState(true);
   const audioRef = useRef(new Audio());
+
+  // Use a ref to always have access to the latest customAudioMap
+  const customAudioMapRef = useRef(customAudioMap);
+  useEffect(() => {
+    customAudioMapRef.current = customAudioMap;
+  }, [customAudioMap]);
 
   useEffect(() => {
     const loadVoices = () => {
@@ -61,10 +80,15 @@ const useSpeech = (customAudioMap) => {
     window.speechSynthesis.cancel();
     audioRef.current.pause();
 
+    // Use ref to get the latest customAudioMap
+    const audioMap = customAudioMapRef.current;
+    console.log("playAudio called - customKey:", customKey, "hasCustom:", !!audioMap[customKey], "totalCustom:", Object.keys(audioMap).length);
+
     // Check for custom audio first
-    if (customKey && customAudioMap[customKey]) {
+    if (customKey && audioMap[customKey]) {
       try {
-        audioRef.current.src = customAudioMap[customKey];
+        console.log("Playing custom audio for:", customKey);
+        audioRef.current.src = audioMap[customKey];
         audioRef.current.play();
         return;
       } catch (e) {
@@ -73,6 +97,7 @@ const useSpeech = (customAudioMap) => {
     }
 
     // Fallback to TTS
+    console.log("Falling back to TTS for:", text);
     if (!text) return;
     const utterance = new SpeechSynthesisUtterance(text);
     if (selectedVoice) utterance.voice = selectedVoice;
@@ -150,6 +175,74 @@ const generateDeck = (mode) => {
   return cards;
 };
 
+// New function to generate a shuffled test deck based on selection
+const generateTestDeck = (selection) => {
+  const cards = [];
+  const min = 1;
+  const max = 10;
+
+  for (let i = min; i <= max; i++) {
+    for (let j = i; j <= max; j++) {
+      const sum = i + j;
+      const product = i * j;
+
+      const create = (q, a, readQ, readA, readVisual, visType, v1, v2, stableId) => ({
+        q, a, readQ, readA, readVisual,
+        id: generateId(),
+        stableId,
+        visual: { type: visType, v1, v2 }
+      });
+
+      if (selection.add) {
+         const visualText1 = `${pluralize(i, 'apple')} plus ${pluralize(j, 'apple')} equals ${pluralize(sum, 'apple')}`;
+         cards.push(create(`${i} + ${j}`, sum, `${i} plus ${j}`, `${sum}. ${i} plus ${j} is ${sum}`, visualText1, 'add', i, j, `add_${i}_${j}`));
+         if (i !== j) {
+            const visualText2 = `${pluralize(j, 'apple')} plus ${pluralize(i, 'apple')} equals ${pluralize(sum, 'apple')}`;
+            cards.push(create(`${j} + ${i}`, sum, `${j} plus ${i}`, `${sum}. ${j} plus ${i} is ${sum}`, visualText2, 'add', j, i, `add_${j}_${i}`));
+         }
+      }
+
+      if (selection.sub) {
+         const visualTextSub1 = `Start with ${pluralize(sum, 'apple')}, take away ${i}`;
+         cards.push(create(`${sum} - ${i}`, j, `${sum} minus ${i}`, `${j}. ${sum} minus ${i} is ${j}`, visualTextSub1, 'sub', sum, i, `sub_${sum}_${i}`));
+         if (i !== j) {
+            const visualTextSub2 = `Start with ${pluralize(sum, 'apple')}, take away ${j}`;
+            cards.push(create(`${sum} - ${j}`, i, `${sum} minus ${j}`, `${i}. ${sum} minus ${j} is ${i}`, visualTextSub2, 'sub', sum, j, `sub_${sum}_${j}`));
+         }
+      }
+
+      if (selection.mult) {
+         const visualTextMult1 = `${pluralize(i, 'basket')} with ${pluralize(j, 'apple')} in each equals ${pluralize(product, 'apple')}`;
+         cards.push(create(`${i} × ${j}`, product, `${i} times ${j}`, `${product}. ${i} times ${j} is ${product}`, visualTextMult1, 'mult', i, j, `mult_${i}_${j}`));
+         if (i !== j) {
+            const visualTextMult2 = `${pluralize(j, 'basket')} with ${pluralize(i, 'apple')} in each equals ${pluralize(product, 'apple')}`;
+            cards.push(create(`${j} × ${i}`, product, `${j} times ${i}`, `${product}. ${j} times ${i} is ${product}`, visualTextMult2, 'mult', j, i, `mult_${j}_${i}`));
+         }
+      }
+
+      if (selection.div) {
+         const verb1 = j === 1 ? 'is' : 'are';
+         const visualTextDiv1 = `${pluralize(product, 'apple')} shared into ${pluralize(i, 'basket')} means ${pluralize(j, 'apple')} ${verb1} in each basket. ${product} divided by ${i} equals ${j}`;
+         cards.push(create(`${product} ÷ ${i}`, j, `${product} divided by ${i}`, `${j}. ${product} divided by ${i} is ${j}`, visualTextDiv1, 'div', product, i, `div_${product}_${i}`));
+
+         if (i !== j) {
+            const verb2 = i === 1 ? 'is' : 'are';
+            const visualTextDiv2 = `${pluralize(product, 'apple')} shared into ${pluralize(j, 'basket')} means ${pluralize(i, 'apple')} ${verb2} in each basket. ${product} divided by ${j} equals ${i}`;
+            cards.push(create(`${product} ÷ ${j}`, i, `${product} divided by ${j}`, `${i}. ${product} divided by ${j} is ${i}`, visualTextDiv2, 'div', product, j, `div_${product}_${j}`));
+         }
+      }
+    }
+  }
+
+  // Shuffle
+  for (let i = cards.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [cards[i], cards[j]] = [cards[j], cards[i]];
+  }
+
+  return cards;
+};
+
 // --- VISUALIZATION COMPONENT ---
 const Visualizer = ({ visual }) => {
   const { type, v1, v2 } = visual;
@@ -187,7 +280,7 @@ const Visualizer = ({ visual }) => {
              {[...Array(total)].map((_, i) => <span key={`c-${i}`} className={`${appleClass} leading-none`}>🍎</span>)}
           </div>
         </div>
-        <div className="text-sm md:text-lg text-slate-500 font-semibold text-center mt-1">{v1} apples + {v2} apples = {total} apples</div>
+        <div className="text-sm md:text-lg text-slate-500 font-semibold text-center mt-1">{pluralize(v1, 'apple')} + {pluralize(v2, 'apple')} = {pluralize(total, 'apple')}</div>
       </div>
     );
   }
@@ -217,7 +310,7 @@ const Visualizer = ({ visual }) => {
             ))}
           </div>
         </div>
-        <div className="text-sm md:text-lg text-slate-500 font-semibold text-center mt-1">Start with {v1}, take away {v2} = {remaining} left</div>
+        <div className="text-sm md:text-lg text-slate-500 font-semibold text-center mt-1">Start with {pluralize(v1, 'apple')}, take away {v2} = {pluralize(remaining, 'apple')} left</div>
       </div>
     );
   }
@@ -249,7 +342,7 @@ const Visualizer = ({ visual }) => {
              {[...Array(total)].map((_, i) => <span key={`p-${i}`} className={`${productAppleClass} leading-none`}>🍎</span>)}
           </div>
         </div>
-        <div className="text-sm md:text-lg text-slate-500 font-semibold text-center mt-1">{v1} baskets × {v2} apples = {total} apples</div>
+        <div className="text-sm md:text-lg text-slate-500 font-semibold text-center mt-1">{pluralize(v1, 'basket')} × {pluralize(v2, 'apple')} = {pluralize(total, 'apple')}</div>
       </div>
     );
   }
@@ -275,7 +368,7 @@ const Visualizer = ({ visual }) => {
         </div>
         <div className="flex flex-col items-center text-center mt-2 px-4">
            <span className="text-sm md:text-lg text-slate-500 font-semibold">
-             {v1} apples shared into {baskets} baskets means <span className="text-emerald-600 font-bold">{applesPerBasket} apples</span> in each.
+             {pluralize(v1, 'apple')} shared into {pluralize(baskets, 'basket')} means <span className="text-emerald-600 font-bold">{pluralize(applesPerBasket, 'apple')}</span> in each.
            </span>
            <span className="text-base md:text-xl text-indigo-600 font-bold mt-1">
              {v1} ÷ {baskets} = {applesPerBasket}
@@ -380,6 +473,27 @@ const NavButton = ({ label, icon, active, colorClass, onClick }) => (
   </button>
 );
 
+// Toggle Button for Test Setup
+const SelectionToggle = ({ label, icon, selected, onClick, colorClass }) => (
+  <button
+    onClick={onClick}
+    className={`
+      flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all h-28
+      ${selected
+        ? `bg-white ${colorClass} shadow-md`
+        : 'bg-slate-50 border-slate-200 text-slate-400 hover:bg-slate-100'}
+    `}
+  >
+    <div className={`p-2 rounded-full mb-2 ${selected ? 'bg-slate-100' : ''}`}>
+      {icon}
+    </div>
+    <span className="font-bold text-sm">{label}</span>
+    <div className="mt-2">
+      {selected ? <CheckSquare size={20} className="text-emerald-500"/> : <SquareIcon size={20} className="text-slate-300"/>}
+    </div>
+  </button>
+);
+
 const FlashcardApp = () => {
   const [activeMode, setActiveMode] = useState('addition');
   const [deck, setDeck] = useState([]);
@@ -394,6 +508,15 @@ const FlashcardApp = () => {
   const [teacherMode, setTeacherMode] = useState(false);
   const [customAudioMap, setCustomAudioMap] = useState({});
 
+  // Test Mode State
+  const [testState, setTestState] = useState('setup'); // 'setup' or 'running'
+  const [testSelection, setTestSelection] = useState({
+    add: false,
+    sub: false,
+    mult: false,
+    div: false
+  });
+
   // Initialize Teacher Mode based on URL
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -404,6 +527,7 @@ const FlashcardApp = () => {
 
   // Firebase Auth & Data Fetching
   useEffect(() => {
+    if (!auth) return; // Skip if Firebase not configured
     const initAuth = async () => {
       if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
         try {
@@ -422,14 +546,23 @@ const FlashcardApp = () => {
   }, []);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !db) {
+      console.log("Audio listener skipped - user:", !!user, "db:", !!db);
+      return;
+    }
+    console.log("Setting up audio listener for appId:", appId);
+    console.log("Collection path:", `artifacts/${appId}/public/data/audio_clips`);
+
     // Listen for custom audio map in Firestore
     const unsub = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'audio_clips'), (snapshot) => {
         const audioData = {};
+        console.log("Audio snapshot received, docs count:", snapshot.size);
         snapshot.forEach(doc => {
+            console.log("Found audio doc:", doc.id);
             audioData[doc.id] = doc.data().data; // base64 string
         });
         setCustomAudioMap(audioData);
+        console.log("customAudioMap updated with", Object.keys(audioData).length, "entries");
     }, (error) => {
         console.error("Error fetching audio map:", error);
     });
@@ -438,17 +571,28 @@ const FlashcardApp = () => {
 
   const { playAudio, enabled: audioEnabled, setEnabled: setAudioEnabled } = useSpeech(customAudioMap);
 
+  // Deck generation logic based on activeMode
   useEffect(() => {
-    const newDeck = generateDeck(activeMode);
-    setDeck(newDeck);
-    setCurrentIndex(0);
-    setIsFlipped(false);
-    setShowVisual(false);
-    setViewMode('card');
+    if (activeMode === 'test') {
+      // If entering test mode, reset to setup unless already running
+      if (testState !== 'running') {
+        setTestState('setup');
+        setDeck([]);
+      }
+    } else {
+      // Standard modes
+      const newDeck = generateDeck(activeMode);
+      setDeck(newDeck);
+      setCurrentIndex(0);
+      setIsFlipped(false);
+      setShowVisual(false);
+      setViewMode('card');
+      setTestState('setup'); // Reset test state if leaving test tab
+    }
   }, [activeMode]);
 
   useEffect(() => {
-    if (viewMode === 'card' && deck.length > 0) {
+    if (viewMode === 'card' && deck.length > 0 && (activeMode !== 'test' || (activeMode === 'test' && testState === 'running'))) {
       const currentStableId = deck[currentIndex]?.stableId;
       const timer = setTimeout(() => {
         if (showVisual) {
@@ -461,10 +605,10 @@ const FlashcardApp = () => {
       }, 300);
       return () => clearTimeout(timer);
     }
-  }, [currentIndex, isFlipped, activeMode, showVisual, deck, viewMode]);
+  }, [currentIndex, isFlipped, activeMode, showVisual, deck, viewMode, testState]);
 
   const saveAudio = async (stableId, type, base64Data) => {
-      if(!user) return;
+      if(!user || !db) return;
       const docId = `${stableId}_${type}`;
       try {
           await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'audio_clips', docId), {
@@ -519,6 +663,27 @@ const FlashcardApp = () => {
     } else {
       playAudio(deck[currentIndex].readQ, `${currentStableId}_q`);
     }
+  };
+
+  const handleStartTest = () => {
+    const newDeck = generateTestDeck(testSelection);
+    if (newDeck.length === 0) {
+      alert("Please select at least one operation to test.");
+      return;
+    }
+    setDeck(newDeck);
+    setTestState('running');
+    setCurrentIndex(0);
+    setIsFlipped(false);
+    setShowVisual(false);
+  };
+
+  const toggleTestSelection = (key) => {
+    setTestSelection(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const selectAllTest = () => {
+    setTestSelection({ add: true, sub: true, mult: true, div: true });
   };
 
   const currentCard = deck[currentIndex] || { q: '', a: '' };
@@ -578,55 +743,128 @@ const FlashcardApp = () => {
               colorClass="border-teal-500"
               onClick={() => setActiveMode('multdiv')}
             />
+            <NavButton
+              label="Test"
+              icon={<Shuffle size={24} strokeWidth={3} className="md:w-7 md:h-7" aria-hidden="true" />}
+              active={activeMode === 'test'}
+              colorClass="border-purple-500"
+              onClick={() => setActiveMode('test')}
+            />
           </div>
         </div>
       </div>
 
-      <div className="w-full h-2 bg-slate-200">
-        <div className="h-full bg-indigo-500 transition-all duration-300" style={{ width: `${progress}%` }}></div>
-      </div>
+      {/* Hide progress bar during test setup */}
+      {!(activeMode === 'test' && testState === 'setup') && (
+        <div className="w-full h-2 bg-slate-200">
+          <div className="h-full bg-indigo-500 transition-all duration-300" style={{ width: `${progress}%` }}></div>
+        </div>
+      )}
 
       <div className="flex-1 w-full max-w-3xl p-3 md:p-6 flex flex-col items-center relative">
 
-        {/* Info & Toolbar */}
-        <div className="w-full flex justify-between items-center mb-4 px-2 mt-2 md:mt-0">
-           <span className="text-slate-400 font-bold text-xs md:text-sm uppercase tracking-wider">
-             {viewMode === 'sheet' ? 'Select a fact' : `Card ${currentIndex + 1} / ${deck.length}`}
-           </span>
-           <div className="flex gap-2">
-             <button
-                onClick={() => setViewMode(prev => prev === 'card' ? 'sheet' : 'card')}
-                className={`p-2 rounded-full transition-colors ${viewMode === 'sheet' ? 'bg-indigo-100 text-indigo-600' : 'text-slate-400 hover:bg-slate-200'}`}
-                title={viewMode === 'card' ? "View All Facts" : "Back to Flashcards"}
-                aria-label={viewMode === 'card' ? "Switch to grid view" : "Switch to flashcard view"}
-              >
-                {viewMode === 'card' ? <LayoutGrid size={24} /> : <CreditCard size={24} />}
-             </button>
-             <button
-                onClick={() => {
-                  setCurrentIndex(0);
-                  setIsFlipped(false);
-                  setShowVisual(false);
-                  setViewMode('card');
-                }}
-                className="p-2 rounded-full text-slate-400 hover:bg-slate-200 transition-colors"
-                title="Restart Set"
-                aria-label="Restart flashcard set"
-              >
-                <RefreshCw size={24} />
-              </button>
-             <button
-                onClick={() => setAudioEnabled(!audioEnabled)}
-                className={`p-2 rounded-full transition-colors ${audioEnabled ? 'text-blue-600 bg-blue-50' : 'text-slate-400 hover:bg-slate-200'}`}
-                title="Toggle Audio"
-                aria-label={audioEnabled ? "Turn audio off" : "Turn audio on"}
-              >
-                {audioEnabled ? <Volume2 size={24} /> : <VolumeX size={24} />}
-              </button>
-           </div>
-        </div>
+        {/* Test Mode Setup Screen */}
+        {activeMode === 'test' && testState === 'setup' ? (
+          <div className="w-full flex flex-col items-center animate-in fade-in zoom-in duration-300">
+            <h2 className="text-2xl font-bold text-slate-700 mb-6">Test Yourself</h2>
 
-        {/* --- MAIN CONTENT AREA --- */}
+            <div className="w-full grid grid-cols-2 gap-4 mb-6 max-w-md">
+              <SelectionToggle
+                label="Addition"
+                icon={<Plus size={24} />}
+                selected={testSelection.add}
+                onClick={() => toggleTestSelection('add')}
+                colorClass="border-blue-500 text-blue-600"
+              />
+              <SelectionToggle
+                label="Subtraction"
+                icon={<Minus size={24} />}
+                selected={testSelection.sub}
+                onClick={() => toggleTestSelection('sub')}
+                colorClass="border-indigo-500 text-indigo-600"
+              />
+              <SelectionToggle
+                label="Multiplication"
+                icon={<X size={24} />}
+                selected={testSelection.mult}
+                onClick={() => toggleTestSelection('mult')}
+                colorClass="border-emerald-500 text-emerald-600"
+              />
+              <SelectionToggle
+                label="Division"
+                icon={<DivideIcon size={24} />}
+                selected={testSelection.div}
+                onClick={() => toggleTestSelection('div')}
+                colorClass="border-teal-500 text-teal-600"
+              />
+            </div>
+
+            <div className="flex gap-4 w-full max-w-md">
+              <button
+                onClick={selectAllTest}
+                className="flex-1 py-3 px-4 rounded-xl font-bold bg-slate-200 text-slate-600 hover:bg-slate-300 transition-all"
+              >
+                Select All
+              </button>
+              <button
+                onClick={handleStartTest}
+                className="flex-[2] py-3 px-4 rounded-xl font-bold bg-purple-600 text-white hover:bg-purple-700 shadow-lg hover:scale-105 transition-all flex items-center justify-center gap-2"
+              >
+                <Shuffle size={20} /> Shuffle & Start
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* Standard Flashcard View (or Test Running View) */
+          <>
+            {/* Info & Toolbar */}
+            <div className="w-full flex justify-between items-center mb-4 px-2 mt-2 md:mt-0">
+              <span className="text-slate-400 font-bold text-xs md:text-sm uppercase tracking-wider">
+                {viewMode === 'sheet' ? 'Select a fact' : `Card ${currentIndex + 1} / ${deck.length}`}
+              </span>
+              <div className="flex gap-2">
+                {activeMode === 'test' && (
+                  <button
+                    onClick={() => setTestState('setup')}
+                    className="p-2 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors"
+                    title="Configure Test"
+                  >
+                    <Settings size={20} />
+                  </button>
+                )}
+                <button
+                   onClick={() => setViewMode(prev => prev === 'card' ? 'sheet' : 'card')}
+                   className={`p-2 rounded-full transition-colors ${viewMode === 'sheet' ? 'bg-indigo-100 text-indigo-600' : 'text-slate-400 hover:bg-slate-200'}`}
+                   title={viewMode === 'card' ? "View All Facts" : "Back to Flashcards"}
+                   aria-label={viewMode === 'card' ? "Switch to grid view" : "Switch to flashcard view"}
+                 >
+                   {viewMode === 'card' ? <LayoutGrid size={24} /> : <CreditCard size={24} />}
+                </button>
+                <button
+                   onClick={() => {
+                     setCurrentIndex(0);
+                     setIsFlipped(false);
+                     setShowVisual(false);
+                     setViewMode('card');
+                   }}
+                   className="p-2 rounded-full text-slate-400 hover:bg-slate-200 transition-colors"
+                   title="Restart Set"
+                   aria-label="Restart flashcard set"
+                 >
+                   <RefreshCw size={24} />
+                 </button>
+                <button
+                   onClick={() => setAudioEnabled(!audioEnabled)}
+                   className={`p-2 rounded-full transition-colors ${audioEnabled ? 'text-blue-600 bg-blue-50' : 'text-slate-400 hover:bg-slate-200'}`}
+                   title="Toggle Audio"
+                   aria-label={audioEnabled ? "Turn audio off" : "Turn audio on"}
+                 >
+                   {audioEnabled ? <Volume2 size={24} /> : <VolumeX size={24} />}
+                 </button>
+              </div>
+            </div>
+
+            {/* --- MAIN CONTENT AREA --- */}
 
         {viewMode === 'sheet' ? (
           /* SHEET / GRID VIEW */
@@ -667,25 +905,15 @@ const FlashcardApp = () => {
                 flex flex-col items-center justify-center transition-all duration-300 overflow-hidden
                 border-b-8 cursor-pointer focus-visible:ring-4 focus-visible:ring-offset-2 focus-visible:ring-indigo-500 outline-none
                 ${showVisual ? 'border-emerald-500' : (isFlipped ? 'border-indigo-500' : 'border-slate-300')}
-                ${hasCustomAudio ? 'ring-4 ring-orange-400 ring-offset-2' : ''}
+                ${teacherMode && hasCustomAudio ? 'ring-4 ring-orange-400 ring-offset-2' : ''}
               `}
             >
               {/* Custom Audio Indicator (Badge) */}
-              {hasCustomAudio && (
+              {teacherMode && hasCustomAudio && (
                   <div className="absolute top-0 left-0 bg-orange-400 text-white text-[10px] font-bold px-2 py-1 rounded-br-lg z-30">
                       CUSTOM AUDIO
                   </div>
               )}
-
-              {/* Audio Replay (Always available) */}
-              <button
-                onClick={handleReplayAudio}
-                className="absolute top-4 right-4 md:top-6 md:right-6 p-2 md:p-3 bg-slate-100 rounded-full hover:bg-slate-200 text-slate-600 transition-colors z-20 focus-visible:ring-2 focus-visible:ring-indigo-500"
-                title="Replay Audio"
-                aria-label="Replay Audio"
-              >
-                <Volume2 size={24} className="md:w-8 md:h-8" />
-              </button>
 
               {/* Visualization Mode */}
               {showVisual ? (
@@ -794,7 +1022,8 @@ const FlashcardApp = () => {
             </div>
           </>
         )}
-
+        </>
+      )}
       </div>
     </div>
   );
