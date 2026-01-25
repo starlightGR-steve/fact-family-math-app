@@ -697,7 +697,7 @@ const FlashcardApp = () => {
   );
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col items-center font-sans">
+    <div className="h-screen bg-slate-100 flex flex-col items-center font-sans overflow-hidden">
 
       {/* Persistent Navigation Bar - ICONS MODE */}
       <div className="w-full bg-white shadow-sm z-20 sticky top-0" role="navigation" aria-label="Math Mode Selection">
@@ -761,7 +761,7 @@ const FlashcardApp = () => {
         </div>
       )}
 
-      <div className="flex-1 w-full max-w-3xl p-3 md:p-6 flex flex-col items-center relative">
+      <div className="flex-1 w-full max-w-3xl p-3 md:p-6 flex flex-col items-center justify-center relative overflow-hidden">
 
         {/* Test Mode Setup Screen */}
         {activeMode === 'test' && testState === 'setup' ? (
@@ -818,7 +818,7 @@ const FlashcardApp = () => {
           /* Standard Flashcard View (or Test Running View) */
           <>
             {/* Info & Toolbar */}
-            <div className="w-full flex justify-between items-center mb-4 px-2 mt-2 md:mt-0">
+            <div className="w-full flex justify-between items-center mb-2 md:mb-4 px-2">
               <span className="text-slate-400 font-bold text-xs md:text-sm uppercase tracking-wider">
                 {viewMode === 'sheet' ? 'Select a fact' : `Card ${currentIndex + 1} / ${deck.length}`}
               </span>
@@ -868,7 +868,7 @@ const FlashcardApp = () => {
 
         {viewMode === 'sheet' ? (
           /* SHEET / GRID VIEW */
-          <div className="w-full grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 max-h-[70vh] overflow-y-auto p-2">
+          <div className="w-full grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 max-h-[60vh] overflow-y-auto p-2">
             {deck.map((card, idx) => (
               <button
                 key={card.id}
@@ -892,7 +892,7 @@ const FlashcardApp = () => {
           </div>
         ) : (
           /* FLASHCARD VIEW */
-          <>
+          <div className="flex flex-col items-center justify-center w-full flex-1">
             <div
               ref={cardRef}
               role="button"
@@ -901,7 +901,7 @@ const FlashcardApp = () => {
               onClick={handleCardInteraction}
               aria-label={`Math problem: ${currentCard.q}. ${isFlipped ? `Answer is ${currentCard.a}` : "Tap to reveal answer"}`}
               className={`
-                relative w-full aspect-[4/3] md:aspect-[16/9] bg-white rounded-3xl shadow-xl
+                relative w-full aspect-[4/3] md:aspect-[16/9] max-h-[50vh] bg-white rounded-3xl shadow-xl
                 flex flex-col items-center justify-center transition-all duration-300 overflow-hidden
                 border-b-8 cursor-pointer focus-visible:ring-4 focus-visible:ring-offset-2 focus-visible:ring-indigo-500 outline-none
                 ${showVisual ? 'border-emerald-500' : (isFlipped ? 'border-indigo-500' : 'border-slate-300')}
@@ -949,7 +949,7 @@ const FlashcardApp = () => {
                      </div>
                   )}
 
-                  <div className="flex flex-row flex-wrap items-center justify-center gap-x-2 gap-y-4 md:gap-8 min-h-[120px]">
+                  <div className="flex flex-row flex-wrap items-center justify-center gap-x-2 gap-y-4 md:gap-8 min-h-[15vh]">
                     {/* Question */}
                     <div className="text-4xl sm:text-6xl md:text-8xl font-bold text-slate-800 whitespace-nowrap">
                       {currentCard.q} <span className="text-slate-400">=</span>
@@ -985,7 +985,7 @@ const FlashcardApp = () => {
             </div>
 
             {/* Action Bar */}
-            <div className="w-full mt-6 flex justify-between items-center gap-2 md:gap-4 px-1">
+            <div className="w-full mt-4 md:mt-6 flex justify-between items-center gap-2 md:gap-4 px-1">
 
               {/* Visualize Toggle */}
               <button
@@ -1020,7 +1020,7 @@ const FlashcardApp = () => {
                 )}
               </div>
             </div>
-          </>
+          </div>
         )}
         </>
       )}
