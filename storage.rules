@@ -1,0 +1,31 @@
+rules_version = '2';
+
+// Firebase Storage Security Rules for Math Fact Family App
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Allow authenticated users to read and write their app's audio files
+    match /artifacts/{appId}/audio/{fileName} {
+      // Allow authenticated users (including anonymous) to read audio files
+      allow read: if request.auth != null;
+
+      // Allow authenticated users to upload audio files
+      // Limit file size to 10MB and only allow audio formats
+      allow write: if request.auth != null
+                   && request.resource.size < 10 * 1024 * 1024
+                   && request.resource.contentType.matches('audio/.*');
+    }
+
+    // PUBLIC READ ACCESS (Optional - Recommended for production)
+    // Uncomment the rule below to make audio files publicly readable
+    // This removes token expiration issues entirely
+    /*
+    match /artifacts/{appId}/audio/{fileName} {
+      allow read: if true;
+      allow write: if request.auth != null
+                   && request.resource.size < 10 * 1024 * 1024
+                   && request.resource.contentType.matches('audio/.*');
+    }
+    */
+  }
+}

@@ -2,12 +2,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Volume2, VolumeX, ArrowRight, Calculator, RefreshCw, LayoutGrid, CreditCard, Plus, Minus, X, Equal, Mic, Square, Settings, Shuffle, CheckSquare, Square as SquareIcon } from 'lucide-react';
 import { initializeApp } from "firebase/app";
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "firebase/auth";
-import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot } from "firebase/firestore";
+import { getFirestore } from "firebase/firestore";
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, listAll } from "firebase/storage";
 
 // --- FIREBASE SETUP ---
 let app = null;
 let auth = null;
 let db = null;
+let storage = null;
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 try {
@@ -16,6 +18,7 @@ try {
     app = initializeApp(firebaseConfig);
     auth = getAuth(app);
     db = getFirestore(app);
+    storage = getStorage(app);
   }
 } catch (e) {
   console.warn("Firebase not configured, running in offline mode:", e.message);
@@ -48,7 +51,7 @@ const generateId = () => Math.random().toString(36).substr(2, 9);
 const pluralize = (count, noun) => `${count} ${noun}${count === 1 ? '' : 's'}`;
 
 // Hook for Speech (TTS + Custom Audio)
-const useSpeech = (customAudioMap) => {
+const useSpeech = (customAudioMap, refreshAudioURLs) => {
   const [voices, setVoices] = useState([]);
   const [selectedVoice, setSelectedVoice] = useState(null);
   const [enabled, setEnabled] = useState(true);
@@ -82,22 +85,58 @@ const useSpeech = (customAudioMap) => {
 
     // Use ref to get the latest customAudioMap
     const audioMap = customAudioMapRef.current;
-    console.log("playAudio called - customKey:", customKey, "hasCustom:", !!audioMap[customKey], "totalCustom:", Object.keys(audioMap).length);
+    console.log("🔊 playAudio called - customKey:", customKey, "hasCustom:", !!audioMap[customKey], "totalCustom:", Object.keys(audioMap).length);
 
     // Check for custom audio first
     if (customKey && audioMap[customKey]) {
       try {
-        console.log("Playing custom audio for:", customKey);
+        console.log("▶️ Playing custom audio for:", customKey);
         audioRef.current.src = audioMap[customKey];
-        audioRef.current.play();
+
+        // Add error handler for automatic retry with fresh URL
+        audioRef.current.onerror = async (err) => {
+          console.warn("⚠️ Audio playback failed for:", customKey, "- Attempting to refresh URL and retry...");
+
+          // Refresh URLs and retry once
+          if (refreshAudioURLs) {
+            await refreshAudioURLs();
+            const updatedMap = customAudioMapRef.current;
+
+            if (updatedMap[customKey]) {
+              console.log("🔄 Retrying with fresh URL for:", customKey);
+              audioRef.current.src = updatedMap[customKey];
+              try {
+                await audioRef.current.play();
+                console.log("✅ Retry successful for:", customKey);
+              } catch (retryErr) {
+                console.error("❌ Retry failed for:", customKey, retryErr);
+                // Fallback to TTS
+                playTTS(text);
+              }
+            } else {
+              console.warn("⚠️ No URL available after refresh, falling back to TTS");
+              playTTS(text);
+            }
+          } else {
+            console.warn("⚠️ No refresh function available, falling back to TTS");
+            playTTS(text);
+          }
+        };
+
+        await audioRef.current.play();
         return;
       } catch (e) {
-        console.error("Error playing custom audio", e);
+        console.error("❌ Error playing custom audio:", e);
+        // Will fall through to TTS
       }
     }
 
     // Fallback to TTS
-    console.log("Falling back to TTS for:", text);
+    playTTS(text);
+  };
+
+  const playTTS = (text) => {
+    console.log("🗣️ Falling back to TTS for:", text);
     if (!text) return;
     const utterance = new SpeechSynthesisUtterance(text);
     if (selectedVoice) utterance.voice = selectedVoice;
@@ -545,31 +584,59 @@ const FlashcardApp = () => {
     return () => unsubscribeAuth();
   }, []);
 
-  useEffect(() => {
-    if (!user || !db) {
-      console.log("Audio listener skipped - user:", !!user, "db:", !!db);
+  // Fetch all audio URLs from Firebase Storage
+  const fetchAllAudioURLs = async () => {
+    if (!user || !storage) {
+      console.log("⏭️ Audio fetch skipped - user:", !!user, "storage:", !!storage);
       return;
     }
-    console.log("Setting up audio listener for appId:", appId);
-    console.log("Collection path:", `artifacts/${appId}/public/data/audio_clips`);
 
-    // Listen for custom audio map in Firestore
-    const unsub = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'audio_clips'), (snapshot) => {
-        const audioData = {};
-        console.log("Audio snapshot received, docs count:", snapshot.size);
-        snapshot.forEach(doc => {
-            console.log("Found audio doc:", doc.id);
-            audioData[doc.id] = doc.data().data; // base64 string
-        });
-        setCustomAudioMap(audioData);
-        console.log("customAudioMap updated with", Object.keys(audioData).length, "entries");
-    }, (error) => {
-        console.error("Error fetching audio map:", error);
-    });
-    return () => unsub();
+    try {
+      console.log("🔄 Fetching audio URLs from Firebase Storage...");
+      const audioFolderRef = storageRef(storage, `artifacts/${appId}/audio`);
+      const fileList = await listAll(audioFolderRef);
+
+      console.log(`📦 Found ${fileList.items.length} audio files in Storage`);
+
+      const audioData = {};
+      await Promise.all(
+        fileList.items.map(async (itemRef) => {
+          try {
+            const url = await getDownloadURL(itemRef);
+            // Extract filename without extension to use as key (e.g., "add_2_3_q.webm" -> "add_2_3_q")
+            const fileName = itemRef.name.replace(/\.[^/.]+$/, "");
+            audioData[fileName] = url;
+            console.log(`✅ Loaded: ${fileName}`);
+          } catch (err) {
+            console.warn(`⚠️ Failed to get URL for ${itemRef.name}:`, err.message);
+          }
+        })
+      );
+
+      setCustomAudioMap(audioData);
+      console.log(`✨ Audio URLs loaded: ${Object.keys(audioData).length} files`);
+    } catch (error) {
+      console.error("❌ Error fetching audio URLs:", error);
+    }
+  };
+
+  // Initial load + periodic refresh every 6 hours
+  useEffect(() => {
+    if (!user || !storage) return;
+
+    console.log("🎵 Initializing audio URL management...");
+    fetchAllAudioURLs();
+
+    // Refresh URLs every 6 hours to prevent expiration
+    const refreshInterval = setInterval(() => {
+      console.log("🔄 Periodic refresh: Updating audio URLs...");
+      fetchAllAudioURLs();
+    }, 6 * 60 * 60 * 1000); // 6 hours in milliseconds
+
+    return () => clearInterval(refreshInterval);
   }, [user]);
 
-  const { playAudio, enabled: audioEnabled, setEnabled: setAudioEnabled } = useSpeech(customAudioMap);
+  const { playAudio, enabled: audioEnabled, setEnabled: setAudioEnabled } = useSpeech(customAudioMap, fetchAllAudioURLs);
 
   // Deck generation logic based on activeMode
   useEffect(() => {
@@ -608,16 +675,39 @@ const FlashcardApp = () => {
   }, [currentIndex, isFlipped, activeMode, showVisual, deck, viewMode, testState]);
 
   const saveAudio = async (stableId, type, base64Data) => {
-      if(!user || !db) return;
-      const docId = `${stableId}_${type}`;
-      try {
-          await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'audio_clips', docId), {
-              data: base64Data,
-              updatedAt: new Date().toISOString()
-          });
-      } catch (e) {
-          console.error("Error saving audio:", e);
-      }
+    if (!user || !storage) {
+      console.warn("⚠️ Cannot save audio - user or storage not initialized");
+      return;
+    }
+
+    const fileName = `${stableId}_${type}.webm`;
+    const fileRef = storageRef(storage, `artifacts/${appId}/audio/${fileName}`);
+
+    try {
+      console.log("📤 Uploading audio to Storage:", fileName);
+
+      // Convert base64 to blob
+      const response = await fetch(base64Data);
+      const blob = await response.blob();
+
+      // Upload to Firebase Storage
+      await uploadBytes(fileRef, blob, {
+        contentType: 'audio/webm',
+        customMetadata: {
+          uploadedAt: new Date().toISOString(),
+          stableId,
+          type
+        }
+      });
+
+      console.log("✅ Audio uploaded successfully:", fileName);
+
+      // Refresh URLs to include the new file
+      await fetchAllAudioURLs();
+      console.log("🔄 Audio URLs refreshed after upload");
+    } catch (e) {
+      console.error("❌ Error saving audio to Storage:", e);
+    }
   };
 
   const handleCardInteraction = () => {

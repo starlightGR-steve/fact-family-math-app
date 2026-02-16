@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audio Migration Tool - Firestore to Storage</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 800px;
+      margin: 40px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      border-radius: 12px;
+      padding: 30px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #333;
+      margin-top: 0;
+    }
+    .config-input {
+      width: 100%;
+      padding: 10px;
+      border: 2px solid #e5e7eb;
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 12px;
+      margin: 10px 0;
+      min-height: 100px;
+    }
+    .status {
+      padding: 15px;
+      border-radius: 8px;
+      margin: 15px 0;
+      font-family: monospace;
+      font-size: 14px;
+      background: #f8f9fa;
+      border-left: 4px solid #6366f1;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    .status div {
+      margin: 5px 0;
+    }
+    button {
+      background: #6366f1;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-size: 16px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    button:hover {
+      background: #4f46e5;
+    }
+    button:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
+    }
+    .success { color: #059669; }
+    .error { color: #dc2626; }
+    .warning { color: #d97706; }
+    .info { color: #0284c7; }
+    .summary {
+      background: #ecfdf5;
+      border: 2px solid #059669;
+      padding: 15px;
+      border-radius: 8px;
+      margin: 20px 0;
+    }
+    .summary h3 {
+      margin-top: 0;
+      color: #059669;
+    }
+    .note {
+      background: #fef3c7;
+      border-left: 4px solid #f59e0b;
+      padding: 12px;
+      border-radius: 4px;
+      margin: 15px 0;
+    }
+    .config-section {
+      background: #f9fafb;
+      padding: 15px;
+      border-radius: 8px;
+      margin: 15px 0;
+      border: 1px solid #e5e7eb;
+    }
+    label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 5px;
+      color: #374151;
+    }
+    input[type="text"] {
+      width: 100%;
+      padding: 8px;
+      border: 2px solid #e5e7eb;
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔄 Audio Migration Tool</h1>
+    <p>This tool migrates your custom audio from Firestore (base64) to Firebase Storage.</p>
+
+    <div class="note">
+      <strong>⚠️ Before you start:</strong>
+      <ul>
+        <li>Make sure Firebase Storage is enabled in Firebase Console</li>
+        <li>Verify Storage security rules are deployed</li>
+        <li>This migration is safe - it copies data without deleting the originals</li>
+        <li>Get your Firebase config from your <code>.env</code> file</li>
+      </ul>
+    </div>
+
+    <div class="config-section">
+      <label for="firebaseConfig">Firebase Config (paste from .env file):</label>
+      <textarea
+        id="firebaseConfig"
+        class="config-input"
+        placeholder='{"apiKey":"...","authDomain":"...","projectId":"...","storageBucket":"...","messagingSenderId":"...","appId":"..."}'
+      ></textarea>
+
+      <label for="appId">App ID:</label>
+      <input type="text" id="appId" placeholder="fact-family-math-app" value="fact-family-math-app">
+    </div>
+
+    <button id="migrateBtn" onclick="startMigration()">Start Migration</button>
+
+    <div id="status" class="status" style="display:none;"></div>
+    <div id="summary" style="display:none;"></div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+    import { getFirestore, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+    import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
+
+    function log(message, type = 'info') {
+      const statusDiv = document.getElementById('status');
+      statusDiv.style.display = 'block';
+      const div = document.createElement('div');
+      div.className = type;
+      div.textContent = message;
+      statusDiv.appendChild(div);
+      statusDiv.scrollTop = statusDiv.scrollHeight;
+      console.log(message);
+    }
+
+    async function startMigration() {
+      const btn = document.getElementById('migrateBtn');
+      const summaryDiv = document.getElementById('summary');
+      const configInput = document.getElementById('firebaseConfig').value.trim();
+      const appIdInput = document.getElementById('appId').value.trim();
+
+      btn.disabled = true;
+      summaryDiv.style.display = 'none';
+      document.getElementById('status').innerHTML = '';
+
+      // Validate inputs
+      if (!configInput) {
+        log('❌ Please paste your Firebase config', 'error');
+        btn.disabled = false;
+        return;
+      }
+
+      if (!appIdInput) {
+        log('❌ Please enter your App ID', 'error');
+        btn.disabled = false;
+        return;
+      }
+
+      let firebaseConfig;
+      try {
+        // Try parsing as JSON (if pasted directly from VITE_FIREBASE_CONFIG)
+        if (configInput.startsWith('{')) {
+          firebaseConfig = JSON.parse(configInput);
+        } else {
+          // If they pasted the full env value like '{"apiKey":...}'
+          firebaseConfig = JSON.parse(configInput.replace(/^['"]|['"]$/g, ''));
+        }
+      } catch (e) {
+        log('❌ Invalid Firebase config JSON. Please check your .env file', 'error');
+        btn.disabled = false;
+        return;
+      }
+
+      let successCount = 0;
+      let errorCount = 0;
+      let skippedCount = 0;
+
+      try {
+        log('🎵 Starting audio migration...', 'info');
+        log('🔧 Initializing Firebase...', 'info');
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const storage = getStorage(app);
+
+        log('✅ Firebase initialized successfully', 'success');
+
+        // Sign in anonymously
+        log('🔐 Authenticating...', 'info');
+        await signInAnonymously(auth);
+        log('✅ Authentication successful', 'success');
+
+        // Get all audio clips from Firestore
+        log('📦 Fetching audio from Firestore...', 'info');
+        const audioClipsRef = collection(db, 'artifacts', appIdInput, 'public', 'data', 'audio_clips');
+        const snapshot = await getDocs(audioClipsRef);
+
+        if (snapshot.empty) {
+          log('⚠️ No audio clips found in Firestore', 'warning');
+          log('   Collection path: artifacts/' + appIdInput + '/public/data/audio_clips', 'info');
+          showSummary(0, 0, 0);
+          btn.disabled = false;
+          return;
+        }
+
+        log(`📦 Found ${snapshot.size} audio clips in Firestore`, 'info');
+        log('', 'info');
+
+        // Migrate each audio clip
+        let index = 0;
+        for (const doc of snapshot.docs) {
+          index++;
+          const docId = doc.id; // e.g., "add_2_3_q"
+          const data = doc.data();
+          const base64Data = data.data;
+
+          if (!base64Data) {
+            log(`⏭️ [${index}/${snapshot.size}] Skipped ${docId} - no data`, 'warning');
+            skippedCount++;
+            continue;
+          }
+
+          try {
+            log(`🔄 [${index}/${snapshot.size}] Migrating: ${docId}...`, 'info');
+
+            // Convert base64 to blob
+            const response = await fetch(base64Data);
+            const blob = await response.blob();
+
+            // Upload to Firebase Storage
+            const fileName = `${docId}.webm`;
+            const storageReference = ref(storage, `artifacts/${appIdInput}/audio/${fileName}`);
+
+            await uploadBytes(storageReference, blob, {
+              contentType: 'audio/webm',
+              customMetadata: {
+                migratedAt: new Date().toISOString(),
+                migratedFrom: 'firestore',
+                originalDocId: docId
+              }
+            });
+
+            // Verify upload
+            await getDownloadURL(storageReference);
+            log(`✅ [${index}/${snapshot.size}] Uploaded: ${docId} → ${fileName}`, 'success');
+            successCount++;
+
+          } catch (error) {
+            log(`❌ [${index}/${snapshot.size}] Failed to migrate ${docId}: ${error.message}`, 'error');
+            errorCount++;
+          }
+        }
+
+        log('', 'info');
+        log('🎉 Migration complete!', 'success');
+        showSummary(successCount, errorCount, skippedCount);
+
+      } catch (error) {
+        log(`❌ Migration failed: ${error.message}`, 'error');
+        console.error(error);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function showSummary(success, errors, skipped) {
+      const summaryDiv = document.getElementById('summary');
+      summaryDiv.style.display = 'block';
+      summaryDiv.className = 'summary';
+      summaryDiv.innerHTML = `
+        <h3>✅ Migration Summary</h3>
+        <p><strong>Successfully migrated:</strong> ${success} files</p>
+        <p><strong>Errors:</strong> ${errors} files</p>
+        <p><strong>Skipped:</strong> ${skipped} files</p>
+        <hr style="margin: 15px 0; border: none; border-top: 1px solid #059669;">
+        <p><strong>Next steps:</strong></p>
+        <ol>
+          <li>✅ Migration complete! Close this page.</li>
+          <li>Open your math app (not Teacher Mode)</li>
+          <li>Audio will now load from Firebase Storage automatically</li>
+          <li>Check Firebase Console > Storage to see migrated files</li>
+          <li>Optional: Delete old Firestore audio_clips collection to save costs</li>
+        </ol>
+      `;
+    }
+
+    // Make function available globally
+    window.startMigration = startMigration;
+
+    // Auto-load from .env if running in dev mode
+    log('✅ Migration tool ready', 'success');
+    log('📋 Paste your Firebase config and App ID above, then click "Start Migration"', 'info');
+  </script>
+</body>
+</html>
