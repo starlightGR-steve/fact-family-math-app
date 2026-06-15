@@ -319,7 +319,7 @@ const Visualizer = ({ visual }) => {
              {[...Array(total)].map((_, i) => <span key={`c-${i}`} className={`${appleClass} leading-none`}>🍎</span>)}
           </div>
         </div>
-        <div className="text-sm md:text-lg text-slate-500 font-semibold text-center mt-1">{pluralize(v1, 'apple')} + {pluralize(v2, 'apple')} = {pluralize(total, 'apple')}</div>
+        <div className="text-sm md:text-lg text-slate-500 font-bold text-center mt-1">{pluralize(v1, 'apple')} + {pluralize(v2, 'apple')} = {pluralize(total, 'apple')}</div>
       </div>
     );
   }
@@ -349,7 +349,7 @@ const Visualizer = ({ visual }) => {
             ))}
           </div>
         </div>
-        <div className="text-sm md:text-lg text-slate-500 font-semibold text-center mt-1">Start with {pluralize(v1, 'apple')}, take away {v2} = {pluralize(remaining, 'apple')} left</div>
+        <div className="text-sm md:text-lg text-slate-500 font-bold text-center mt-1">Start with {pluralize(v1, 'apple')}, take away {v2} = {pluralize(remaining, 'apple')} left</div>
       </div>
     );
   }
@@ -381,7 +381,7 @@ const Visualizer = ({ visual }) => {
              {[...Array(total)].map((_, i) => <span key={`p-${i}`} className={`${productAppleClass} leading-none`}>🍎</span>)}
           </div>
         </div>
-        <div className="text-sm md:text-lg text-slate-500 font-semibold text-center mt-1">{pluralize(v1, 'basket')} × {pluralize(v2, 'apple')} = {pluralize(total, 'apple')}</div>
+        <div className="text-sm md:text-lg text-slate-500 font-bold text-center mt-1">{pluralize(v1, 'basket')} × {pluralize(v2, 'apple')} = {pluralize(total, 'apple')}</div>
       </div>
     );
   }
@@ -406,10 +406,10 @@ const Visualizer = ({ visual }) => {
           ))}
         </div>
         <div className="flex flex-col items-center text-center mt-2 px-4">
-           <span className="text-sm md:text-lg text-slate-500 font-semibold">
+           <span className="text-sm md:text-lg text-slate-500 font-bold">
              {pluralize(v1, 'apple')} shared into {pluralize(baskets, 'basket')} means <span className="text-emerald-600 font-bold">{pluralize(applesPerBasket, 'apple')}</span> in each.
            </span>
-           <span className="text-base md:text-xl text-indigo-600 font-bold mt-1">
+           <span className="text-base md:text-xl text-math-mix-multdiv font-bold mt-1">
              {v1} ÷ {baskets} = {applesPerBasket}
            </span>
         </div>
@@ -491,6 +491,18 @@ const AudioRecorder = ({ cardStableId, type, onSave }) => {
 };
 
 // --- MAIN APP ---
+
+// Per-operation signature color (kit --math-* tokens), keyed by a card's
+// visual.type. The card underline, question numbers, and revealed answer all
+// follow the OPERATION OF THAT SPECIFIC CARD (not the active tab), so e.g. a
+// subtraction question reads math-mix-addsub in every tab and mode.
+const OP_COLOR = {
+  add:  { border: 'border-math-add',         text: 'text-math-add' },
+  sub:  { border: 'border-math-mix-addsub',  text: 'text-math-mix-addsub' },
+  mult: { border: 'border-math-mult',        text: 'text-math-mult' },
+  div:  { border: 'border-math-mix-multdiv', text: 'text-math-mix-multdiv' },
+};
+const cardColor = (card) => OP_COLOR[card?.visual?.type] || OP_COLOR.add;
 
 const NavButton = ({ label, icon, active, colorClass, onClick }) => (
   <button
@@ -797,7 +809,7 @@ const FlashcardApp = () => {
               label="Add"
               icon={<Plus size={24} strokeWidth={3} className="md:w-7 md:h-7" aria-hidden="true" />}
               active={activeMode === 'addition'}
-              colorClass="border-blue-500"
+              colorClass="border-math-add"
               onClick={() => setActiveMode('addition')}
             />
             <NavButton
@@ -810,14 +822,14 @@ const FlashcardApp = () => {
                 </div>
               }
               active={activeMode === 'addsub'}
-              colorClass="border-indigo-500"
+              colorClass="border-math-mix-addsub"
               onClick={() => setActiveMode('addsub')}
             />
             <NavButton
               label="Mult"
               icon={<X size={24} strokeWidth={3} className="md:w-7 md:h-7" aria-hidden="true" />}
               active={activeMode === 'mult'}
-              colorClass="border-emerald-500"
+              colorClass="border-math-mult"
               onClick={() => setActiveMode('mult')}
             />
             <NavButton
@@ -830,14 +842,14 @@ const FlashcardApp = () => {
                 </div>
               }
               active={activeMode === 'multdiv'}
-              colorClass="border-teal-500"
+              colorClass="border-math-mix-multdiv"
               onClick={() => setActiveMode('multdiv')}
             />
             <NavButton
               label="Test"
               icon={<Shuffle size={24} strokeWidth={3} className="md:w-7 md:h-7" aria-hidden="true" />}
               active={activeMode === 'test'}
-              colorClass="border-purple-500"
+              colorClass="border-math-test"
               onClick={() => setActiveMode('test')}
             />
           </div>
@@ -847,7 +859,7 @@ const FlashcardApp = () => {
       {/* Hide progress bar during test setup */}
       {!(activeMode === 'test' && testState === 'setup') && (
         <div className="w-full h-2 bg-slate-200">
-          <div className="h-full bg-indigo-500 transition-all duration-300" style={{ width: `${progress}%` }}></div>
+          <div className="h-full bg-ps-teal transition-all duration-300" style={{ width: `${progress}%` }}></div>
         </div>
       )}
 
@@ -864,28 +876,28 @@ const FlashcardApp = () => {
                 icon={<Plus size={24} />}
                 selected={testSelection.add}
                 onClick={() => toggleTestSelection('add')}
-                colorClass="border-blue-500 text-blue-600"
+                colorClass="border-math-add text-math-add"
               />
               <SelectionToggle
                 label="Subtraction"
                 icon={<Minus size={24} />}
                 selected={testSelection.sub}
                 onClick={() => toggleTestSelection('sub')}
-                colorClass="border-indigo-500 text-indigo-600"
+                colorClass="border-math-mix-addsub text-math-mix-addsub"
               />
               <SelectionToggle
                 label="Multiplication"
                 icon={<X size={24} />}
                 selected={testSelection.mult}
                 onClick={() => toggleTestSelection('mult')}
-                colorClass="border-emerald-500 text-emerald-600"
+                colorClass="border-math-mult text-math-mult"
               />
               <SelectionToggle
                 label="Division"
                 icon={<DivideIcon size={24} />}
                 selected={testSelection.div}
                 onClick={() => toggleTestSelection('div')}
-                colorClass="border-teal-500 text-teal-600"
+                colorClass="border-math-mix-multdiv text-math-mix-multdiv"
               />
             </div>
 
@@ -898,7 +910,7 @@ const FlashcardApp = () => {
               </button>
               <button
                 onClick={handleStartTest}
-                className="flex-[2] py-3 px-4 rounded-xl font-bold bg-purple-600 text-white hover:bg-purple-700 shadow-lg hover:scale-105 transition-all flex items-center justify-center gap-2"
+                className="flex-[2] py-3 px-4 rounded-xl font-bold bg-ps-green text-white hover:brightness-95 shadow-lg hover:scale-105 transition-all flex items-center justify-center gap-2"
               >
                 <Shuffle size={20} /> Shuffle & Start
               </button>
@@ -924,7 +936,7 @@ const FlashcardApp = () => {
                 )}
                 <button
                    onClick={() => setViewMode(prev => prev === 'card' ? 'sheet' : 'card')}
-                   className={`p-2 rounded-full transition-colors ${viewMode === 'sheet' ? 'bg-indigo-100 text-indigo-600' : 'text-slate-400 hover:bg-slate-200'}`}
+                   className={`p-2 rounded-full transition-colors ${viewMode === 'sheet' ? 'bg-blue-light text-ps-blue' : 'text-slate-400 hover:bg-slate-200'}`}
                    title={viewMode === 'card' ? "View All Facts" : "Back to Flashcards"}
                    aria-label={viewMode === 'card' ? "Switch to grid view" : "Switch to flashcard view"}
                  >
@@ -945,7 +957,7 @@ const FlashcardApp = () => {
                  </button>
                 <button
                    onClick={() => setAudioEnabled(!audioEnabled)}
-                   className={`p-2 rounded-full transition-colors ${audioEnabled ? 'text-blue-600 bg-blue-50' : 'text-slate-400 hover:bg-slate-200'}`}
+                   className={`p-2 rounded-full transition-colors ${audioEnabled ? 'text-ps-blue bg-blue-light' : 'text-slate-400 hover:bg-slate-200'}`}
                    title="Toggle Audio"
                    aria-label={audioEnabled ? "Turn audio off" : "Turn audio on"}
                  >
@@ -971,8 +983,8 @@ const FlashcardApp = () => {
                 className={`
                   p-4 rounded-xl font-bold text-lg shadow-sm border-2 transition-all
                   ${currentIndex === idx
-                    ? 'bg-indigo-50 border-indigo-500 text-indigo-700 ring-2 ring-indigo-200'
-                    : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-300 hover:shadow-md'}
+                    ? 'bg-blue-light border-ps-blue text-ps-blue ring-2 ring-blue-light'
+                    : 'bg-white border-slate-200 text-slate-600 hover:border-ps-blue hover:shadow-md'}
                 `}
                 aria-label={`Select math fact ${card.q}`}
               >
@@ -993,8 +1005,8 @@ const FlashcardApp = () => {
               className={`
                 relative w-full aspect-[4/3] md:aspect-[16/9] max-h-[50vh] bg-white rounded-3xl shadow-xl
                 flex flex-col items-center justify-center transition-all duration-300 overflow-hidden
-                border-b-8 cursor-pointer focus-visible:ring-4 focus-visible:ring-offset-2 focus-visible:ring-indigo-500 outline-none
-                ${showVisual ? 'border-emerald-500' : (isFlipped ? 'border-indigo-500' : 'border-slate-300')}
+                border-b-8 cursor-pointer focus-visible:ring-4 focus-visible:ring-offset-2 focus-visible:ring-ps-orange outline-none
+                ${cardColor(currentCard).border}
                 ${teacherMode && hasCustomAudio ? 'ring-4 ring-orange-400 ring-offset-2' : ''}
               `}
             >
@@ -1041,13 +1053,13 @@ const FlashcardApp = () => {
 
                   <div className="flex flex-row flex-wrap items-center justify-center gap-x-2 gap-y-4 md:gap-8 min-h-[15vh]">
                     {/* Question */}
-                    <div className="text-4xl sm:text-6xl md:text-8xl font-bold text-slate-800 whitespace-nowrap">
+                    <div className={`text-4xl sm:text-6xl md:text-8xl font-bold ${cardColor(currentCard).text} whitespace-nowrap`}>
                       {currentCard.q} <span className="text-slate-400">=</span>
                     </div>
 
                     {/* Answer (revealed or placeholder) */}
                     <div className={`
-                      text-4xl sm:text-6xl md:text-8xl font-bold text-indigo-600 min-w-[1ch] transition-opacity duration-300
+                      text-4xl sm:text-6xl md:text-8xl font-bold ${cardColor(currentCard).text} min-w-[1ch] transition-opacity duration-300
                       ${isFlipped ? 'opacity-100' : 'opacity-0'}
                     `}>
                       {currentCard.a}
@@ -1074,8 +1086,8 @@ const FlashcardApp = () => {
               )}
             </div>
 
-            {/* Action Bar */}
-            <div className="w-full mt-4 md:mt-6 flex justify-between items-center gap-2 md:gap-4 px-1">
+            {/* Action Bar — min-h keeps height constant between the "Thinking" and "Next" states so the card above never re-centers/jumps on reveal */}
+            <div className="w-full mt-4 md:mt-6 min-h-[3.75rem] flex justify-between items-center gap-2 md:gap-4 px-1">
 
               {/* Visualize Toggle */}
               <button
@@ -1100,7 +1112,7 @@ const FlashcardApp = () => {
                 {(isFlipped || showVisual) ? (
                   <button
                     onClick={handleNext}
-                    className="flex items-center gap-2 bg-indigo-600 text-white px-4 md:px-8 py-3 rounded-xl text-lg font-bold shadow-lg hover:bg-indigo-700 hover:scale-105 transition-all w-full md:w-auto justify-center"
+                    className="flex items-center gap-2 bg-ps-teal text-white px-4 md:px-8 py-3 rounded-xl text-lg font-bold shadow-lg hover:brightness-95 hover:scale-105 transition-all w-full md:w-auto justify-center"
                     aria-label="Next Card"
                   >
                     Next <ArrowRight size={24} className="md:w-8 md:h-8" aria-hidden="true" />
