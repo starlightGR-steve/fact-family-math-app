@@ -863,7 +863,7 @@ const FlashcardApp = () => {
         </div>
       )}
 
-      <div className="flex-1 w-full max-w-3xl p-3 md:p-6 flex flex-col items-center justify-center relative overflow-hidden">
+      <div className="flex-1 w-full max-w-3xl p-3 md:p-6 flex flex-col items-center justify-center relative overflow-y-auto">
 
         {/* Test Mode Setup Screen */}
         {activeMode === 'test' && testState === 'setup' ? (
@@ -994,7 +994,7 @@ const FlashcardApp = () => {
           </div>
         ) : (
           /* FLASHCARD VIEW */
-          <div className="flex flex-col items-center justify-center w-full flex-1">
+          <div className="flex flex-col items-center justify-center w-full my-auto">
             <div
               ref={cardRef}
               role="button"
@@ -1003,7 +1003,7 @@ const FlashcardApp = () => {
               onClick={handleCardInteraction}
               aria-label={`Math problem: ${currentCard.q}. ${isFlipped ? `Answer is ${currentCard.a}` : "Tap to reveal answer"}`}
               className={`
-                relative w-full aspect-[4/3] md:aspect-[16/9] max-h-[50vh] bg-white rounded-3xl shadow-xl
+                relative w-full min-h-[18rem] md:min-h-0 md:aspect-[16/9] md:max-h-[50vh] bg-white rounded-3xl shadow-xl
                 flex flex-col items-center justify-center transition-all duration-300 overflow-hidden
                 border-b-8 cursor-pointer focus-visible:ring-4 focus-visible:ring-offset-2 focus-visible:ring-ps-orange outline-none
                 ${cardColor(currentCard).border}
